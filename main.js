@@ -1,8 +1,10 @@
 let fs = require("fs");
 
-debug = {
+let ENV = {};
+
+let debug = {
     log:function(){
-        //console.log(...arguments);
+        if(ENV.DEBUG)console.log(...arguments);
     }
 };
 
@@ -36,7 +38,8 @@ let malloc = function(size){
 //end utils
 
 
-//routines
+
+
 let IS = function(){
     let args = [...arguments];
     return {
@@ -113,18 +116,7 @@ let tryBlockOpt = function(code, /*str and strptr for lookahead*/str,strptr){
     debug.log("Pre-optimized: [() "+code.map(s=>`${s.type}(${s.data.join(",")})`).join(", ")+" ]()");
     debug.log("Optimized    : "+block.map(s=>`${s.type}(${s.data.join(",")})`).join(", "));
     return [block,strptr];
-}
-//end routines
-
-
-
-
-
-//begin main
-if(!process.argv[2]){
-    error("Please provide input file");
-}
-let str = fs.readFileSync(process.argv[2])+"";
+};
 
 
 let getInstr = function(c,i){
@@ -149,72 +141,103 @@ let getInstr = function(c,i){
     }
 };
 
-let stackables = toCharMap("+-<>");
 
-let instrs = [];
-let loops = [];
-let innermost = true;
-for(let i = 0; i < str.length; i++){
-    let ins = getInstr(str[i],i);
-    if(!ins)continue;
-    if(ins.type in stackables && top(instrs)?.type === ins.type ){
-        top(instrs).data[0] += ins.data[0];
-    }else if(ins.type === "["){
-        loops.push(instrs.length);
-        instrs.push(ins);
-        innermost = true;
-    }else if(ins.type === "]"){
-        if(loops.length === 0){
-            error(`no matching "[" for "]" at character ${ins.position}`);
-        }
-        
-        let loop_start = loops.pop();
-        let loop_end = instrs.length;
-        let optResult = false;
-        if(innermost === true){
-            optResult = tryBlockOpt(instrs.slice(loop_start+1),str,i);
-            innermost = false;
-        }
-        if(optResult){
-            let block;
-            [block,i] = optResult;
-            instrs.length = loop_start;
-            append(instrs,block);
+let generateBytecode = function(str){
+    let stackables = toCharMap("+-<>");
+    
+    let bytecode = [];
+    let loops = [];
+    let innermost = true;
+    for(let i = 0; i < str.length; i++){
+        let ins = getInstr(str[i],i);
+        if(!ins)continue;
+        if(ins.type in stackables && top(bytecode)?.type === ins.type ){
+            top(bytecode).data[0] += ins.data[0];
+        }else if(ins.type === "["){
+            loops.push(bytecode.length);
+            bytecode.push(ins);
+            innermost = true;
+        }else if(ins.type === "]"){
+            if(loops.length === 0){
+                error(`no matching "[" for "]" at character ${ins.position}`);
+            }
+            
+            let loop_start = loops.pop();
+            let loop_end = bytecode.length;
+            let optResult = false;
+            if(innermost === true){
+                if(!ENV.NO_BYTECODE_OPT)optResult = tryBlockOpt(bytecode.slice(loop_start+1),str,i);
+                innermost = false;
+            }
+            if(optResult){
+                let block;
+                [block,i] = optResult;
+                bytecode.length = loop_start;
+                append(bytecode,block);
+            }else{
+                bytecode.push(ins);//linking will be done by jit so don't worry
+            }
         }else{
-            instrs.push(ins);//linking will be done by jit so don't worry
+            //io commands
+            bytecode.push(ins);
         }
-    }else{
-        //io commands
-        instrs.push(ins);
     }
-}
+    return bytecode;
+};
 
-debug.log("Bytecode generated: "+instrs.map(s=>`${s.type}(${s.data.join(",")})`).join(", "));
+let codegenJS = function(bytecode){
+    let program = 
+`let mem = new Uint8Array(100000);
+let mptr = 0;
+let input = [];
+let iptr = 0;
+let write = function(n){
+process.stdout.write(String.fromCharCode(n));
+};
+`  +
+    bytecode.map(ins=>{
+        if(ins.type === "+")return `mem[mptr]+=${ins.data[0]};`;
+        if(ins.type === ">")return `mptr+=${ins.data[0]};`
+        if(ins.type === "[")return `while(mem[mptr]){`
+        if(ins.type === "]")return `}`
+        if(ins.type === ",")return `mem[mptr]=input[iptr++];`
+        if(ins.type === ".")return `write(mem[mptr]);`
+        if(ins.type === "MEMSET")return `mem[mptr]=${ins.data[0]};`
+        if(ins.type === "MEMMOV")return `mem[mptr+${ins.data[0]}]+=mem[mptr]*${ins.data[1]};`
+    }).join("\n");
+    return program;
+};
+
+let evalJS = function(code){
+    {eval(code);}
+};
 
 
-//now compile it
-{
-    let mem = new Uint8Array(100000);
-    let mptr = 0;
-    let input = [];
-    let iptr = 0;
-    let write = function(n){
-        process.stdout.write(String.fromCharCode(n));
+let main = function(){
+    if(!process.argv[2]){
+        error("Please provide input file");
     }
-    let program = instrs.map(ins=>{
-        if(ins.type === "+")return `mem[mptr]+=${ins.data[0]};\n`;
-        if(ins.type === ">")return `mptr+=${ins.data[0]};\n`
-        if(ins.type === "[")return `while(mem[mptr]){\n`
-        if(ins.type === "]")return `}\n`
-        if(ins.type === ",")return `mem[mptr]=input[iptr++];\n`
-        if(ins.type === ".")return `write(mem[mptr]);\n`
-        if(ins.type === "MEMSET")return `mem[mptr]=${ins.data[0]};\n`
-        if(ins.type === "MEMMOV")return `mem[mptr+${ins.data[0]}]+=mem[mptr]*${ins.data[1]};\n`
-    }).join("");
-    //debug.log(program);
-    eval(program);
-    //debug.log(mem);
-}
+    let str = fs.readFileSync(process.argv[2])+"";
+    //process.exit();
+    
+    let t0,t1;
+    t0 = performance.now();
+    let bytecode = generateBytecode(str);
+    t1 = performance.now();
+    console.log(`bytecode generation:${t1-t0}ms`);
+    console.log("Bytecode size",bytecode.length);
+    debug.log("Bytecode generated: "+bytecode.map(s=>`${s.type}(${s.data.join(",")})`).join(", "));
+    
+    
+    //fs.writeFileSync("mandelbrot.js",codegenJS(bytecode),"utf-8");
+    t0 = performance.now();
+    evalJS(codegenJS(bytecode));
+    t1 = performance.now();
+    console.log(`execution:${t1-t0}ms`);
+};
+
+
+main();
 
 
 
