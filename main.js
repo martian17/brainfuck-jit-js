@@ -305,7 +305,7 @@ let main = function(){
     t0 = performance.now();
     let bytecode = generateBytecode(str);
     t1 = performance.now();
-    console.error(`Bytecode generation:${t1-t0}ms`);
+    console.error(`Bytecode generation: ${t1-t0}ms`);
     console.error("Bytecode size",bytecode.length);
     debug.log("Bytecode generated: "+bytecode.map(s=>`${s.type}(${s.data.join(",")})`).join(", "));
     
