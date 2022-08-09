@@ -1,6 +1,10 @@
 let fs = require("fs");
 
-let ENV = {};
+let ENV = {
+    OPTIMIZE_BYTECODE:true,
+    SAVE_CODE:true,
+    DEBUG:false
+};
 
 let debug = {
     log:function(){
@@ -166,7 +170,7 @@ let generateBytecode = function(str){
             let loop_end = bytecode.length;
             let optResult = false;
             if(innermost === true){
-                if(!ENV.NO_BYTECODE_OPT)optResult = tryBlockOpt(bytecode.slice(loop_start+1),str,i);
+                if(ENV.OPTIMIZE_BYTECODE)optResult = tryBlockOpt(bytecode.slice(loop_start+1),str,i);
                 innermost = false;
             }
             if(optResult){
@@ -228,8 +232,8 @@ let main = function(){
     console.log("Bytecode size",bytecode.length);
     debug.log("Bytecode generated: "+bytecode.map(s=>`${s.type}(${s.data.join(",")})`).join(", "));
     
+    if(ENV.SAVE_CODE)fs.writeFileSync(`${process.argv[2].split(".").slice(0,-1).join(".")}-${ENV.OPTIMIZE_BYTECODE?"optimized":"unoptimized"}.js`,codegenJS(bytecode),"utf-8");
     
-    //fs.writeFileSync("mandelbrot.js",codegenJS(bytecode),"utf-8");
     t0 = performance.now();
     evalJS(codegenJS(bytecode));
     t1 = performance.now();
