@@ -212,8 +212,70 @@ process.stdout.write(String.fromCharCode(n));
     return program;
 };
 
+/*
+//too slow
+let codegenJSv2 = function(bytecode){
+    let program = 
+`let mem = new Uint8Array(100000);
+let mptr = 0;
+let input = [];
+let iptr = 0;
+let write = function(n){
+process.stdout.write(String.fromCharCode(n));
+};
+`  +
+    bytecode.map(ins=>{
+        let d0 = ins.data[0];
+        if(ins.type === "+")return `mem[mptr]${d0<0?"-="+(-d0):"+="+(d0)};`;
+        if(ins.type === ">")return `mptr${d0<0?"-="+(-d0):"+="+(d0)};`;
+        if(ins.type === "[")return `while(mem[mptr]){`;
+        if(ins.type === "]")return `}`;
+        if(ins.type === ",")return `mem[mptr]=input[iptr++];`;
+        if(ins.type === ".")return `write(mem[mptr]);`;
+        if(ins.type === "MEMSET")return `mem[mptr]=${ins.data[0]};`;
+        if(ins.type === "MEMMOV"){
+            let mul = ins.data[1];
+            if(mul === -1){
+                return `mem[mptr+${ins.data[0]}]-=mem[mptr];`;
+            }else if(mul === 1){
+                return `mem[mptr+${ins.data[0]}]+=mem[mptr];`;
+            }else if(mul < 0){
+                return `mem[mptr+${ins.data[0]}]-=mem[mptr]*${-ins.data[1]};`;
+            }else{
+                return `mem[mptr+${ins.data[0]}]+=mem[mptr]*${ins.data[1]};`;
+            }
+        }
+    }).join("\n");
+    return program;
+};
+*/
+
 let evalJS = function(code){
     {eval(code);}
+};
+
+
+let codegenC = function(bytecode){
+    let program = 
+`#include <unistd.h>
+#include <stdint.h>
+int main(){
+uint8_t mem[100000] = {0};
+size_t mptr = 0;
+uint8_t input[100000] = {0};
+size_t iptr = 0;
+`  +
+    bytecode.map(ins=>{
+        if(ins.type === "+")return `mem[mptr]+=${ins.data[0]};`;
+        if(ins.type === ">")return `mptr+=${ins.data[0]};`
+        if(ins.type === "[")return `while(mem[mptr]){`
+        if(ins.type === "]")return `}`
+        if(ins.type === ",")return `mem[mptr]=input[iptr++];`
+        if(ins.type === ".")return `write(1,&mem[mptr],1);`
+        if(ins.type === "MEMSET")return `mem[mptr]=${ins.data[0]};`
+        if(ins.type === "MEMMOV")return `mem[mptr+${ins.data[0]}]+=mem[mptr]*${ins.data[1]};`
+    }).join("\n")+"\n}";
+    return program;
 };
 
 
