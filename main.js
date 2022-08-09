@@ -1,8 +1,9 @@
 let fs = require("fs");
 
 let ENV = {
-    OPTIMIZE_BYTECODE:true,
+    OPTIMIZE_BYTECODE:false,
     SAVE_CODE:true,
+    LANG:"JS",
     DEBUG:false
 };
 
@@ -283,6 +284,20 @@ let main = function(){
     if(!process.argv[2]){
         error("Please provide input file");
     }
+    let flags = toCharMap((process.argv[3] || "").replace("-",""));
+    ENV.OPTIMIZE_BYTECODE = "O" in flags;
+    ENV.SAVE_CODE = "S" in flags;
+    ENV.DEBUG = "D" in flags;
+    if("J" in flags){
+        ENV.LANG = "JS"
+    }else if("C" in flags){
+        ENV.LANG = "C";
+    }
+    console.error("Bytecode Optimization "+(ENV.OPTIMIZE_BYTECODE?"enabled":"disabled"));
+    if(!ENV.OPTIMIZE_BYTECODE)console.error("Add -O flag to enable");
+    if(ENV.OPTIMIZE_BYTECODE)console.error("Remove -O flag to disable");
+    console.error();
+    
     let str = fs.readFileSync(process.argv[2])+"";
     //process.exit();
     
@@ -290,16 +305,26 @@ let main = function(){
     t0 = performance.now();
     let bytecode = generateBytecode(str);
     t1 = performance.now();
-    console.log(`bytecode generation:${t1-t0}ms`);
-    console.log("Bytecode size",bytecode.length);
+    console.error(`Bytecode generation:${t1-t0}ms`);
+    console.error("Bytecode size",bytecode.length);
     debug.log("Bytecode generated: "+bytecode.map(s=>`${s.type}(${s.data.join(",")})`).join(", "));
     
-    if(ENV.SAVE_CODE)fs.writeFileSync(`${process.argv[2].split(".").slice(0,-1).join(".")}-${ENV.OPTIMIZE_BYTECODE?"optimized":"unoptimized"}.js`,codegenJS(bytecode),"utf-8");
     
-    t0 = performance.now();
-    evalJS(codegenJS(bytecode));
-    t1 = performance.now();
-    console.log(`execution:${t1-t0}ms`);
+    if(ENV.LANG === "JS"){
+        if(ENV.SAVE_CODE){
+            let fname = `${process.argv[2].split(".").slice(0,-1).join(".")}-${ENV.OPTIMIZE_BYTECODE?"optimized":"unoptimized"}.js`;
+            console.error(`Saving the file to ${fname}`);
+            fs.writeFileSync(fname,codegenJS(bytecode),"utf-8");
+        }
+        t0 = performance.now();
+        evalJS(codegenJS(bytecode));
+        t1 = performance.now();
+        console.error(`execution:${t1-t0}ms`);
+    }else if(ENV.LANG === "C"){
+        let fname = `${process.argv[2].split(".").slice(0,-1).join(".")}-${ENV.OPTIMIZE_BYTECODE?"optimized":"unoptimized"}.c`;
+        console.error(`Saving the file to ${fname}`);
+        fs.writeFileSync(fname,codegenC(bytecode),"utf-8");
+    }
 };
 
 
